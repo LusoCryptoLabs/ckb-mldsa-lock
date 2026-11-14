@@ -230,7 +230,7 @@ while (Date.now() < end) {
   let b = accounts[int(accounts.length)]
   if (b === a) b = accounts[(accounts.indexOf(a) + 1) % accounts.length]
   const r = Math.random()
-  const what = r < 0.35 ? 'pay' : r < 0.5 ? 'mixed' : r < 0.6 ? 'big' : r < 0.85 ? 'burst' : 'rbf'
+  const what = process.env.SOAK_ONLY ?? (r < 0.35 ? 'pay' : r < 0.5 ? 'mixed' : r < 0.6 ? 'big' : r < 0.85 ? 'burst' : 'rbf')
   actions[what] = (actions[what] ?? 0) + 1
   try {
     if (what === 'pay') await pay(a, b, 1 + int(3))
