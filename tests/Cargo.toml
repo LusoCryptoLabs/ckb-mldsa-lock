@@ -1,0 +1,19 @@
+[workspace]
+
+[package]
+name = "mldsa-lock-tests"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+ckb-testtool = "1.1.1"
+fips204 = "0.5"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[dev-dependencies]
+# The adversary engine, private, by path (same ckb-testtool 1.1.1).
+ckb-adversary = { path = "/mnt/d/Repos/ckb-adversary" }
+
+[profile.release]
+opt-level = 3
