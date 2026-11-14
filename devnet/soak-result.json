@@ -1,0 +1,17 @@
+{
+  "when": "2026-11-14T21:05:56.391Z",
+  "minutes": 3,
+  "actions": {
+    "mixed": 1,
+    "pay": 4,
+    "burst": 3
+  },
+  "sent": 21,
+  "committed": 21,
+  "attackRefused": 21,
+  "attackAccepted": 0,
+  "rbfWon": 0,
+  "rbfOther": 0,
+  "problems": [],
+  "books": true
+}
