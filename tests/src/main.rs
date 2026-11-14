@@ -73,14 +73,17 @@ fn sighash(tx: &TransactionView, group: &[usize], lock_len: usize) -> [u8; 32] {
     let zeroed = w0.as_builder().lock(Some(Bytes::from(vec![0u8; lock_len])).pack()).build();
     h.update(&(zeroed.as_slice().len() as u64).to_le_bytes());
     h.update(zeroed.as_slice());
-    for &i in &group[1..] {
+    // Controls: a build that leaves a part out is matched by a signer that leaves it out too.
+    let no_group = std::env::var("MLDSA_CONTROL_NO_GROUP").is_ok();
+    let no_past = std::env::var("MLDSA_CONTROL_NO_PAST").is_ok();
+    for &i in group[1..].iter().filter(|_| !no_group) {
         if let Some(w) = tx.witnesses().get(i) {
             h.update(&(w.raw_data().len() as u64).to_le_bytes());
             h.update(&w.raw_data());
         }
     }
     let n = tx.inputs().len();
-    for i in n..tx.witnesses().len() {
+    for i in (n..tx.witnesses().len()).filter(|_| !no_past) {
         let w = tx.witnesses().get(i).unwrap();
         h.update(&(w.raw_data().len() as u64).to_le_bytes());
         h.update(&w.raw_data());
