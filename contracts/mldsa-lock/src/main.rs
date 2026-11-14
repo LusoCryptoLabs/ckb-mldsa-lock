@@ -4,26 +4,29 @@
 //!           || blake2b-256(public key) (32 bytes, CKB personalization)
 //! witness = the group's first WitnessArgs, `lock` = public key || signature, each of exactly the
 //!           level's size
-//! message = CKB sighash_all, as the secp256k1 lock computes it: blake2b(tx hash, then the group's
-//!           first witness with its lock bytes zeroed, then the group's other witnesses, then every
-//!           witness past the inputs, each preceded by its length as u64 little-endian)
-//! context = "CKB-MLDSA-LOCK" (FIPS 204 domain separation: a signature made here means nothing
-//!           to another protocol, and one made elsewhere means nothing here)
+//! message = blake2b(this lock script's hash, then CKB sighash_all as the secp256k1 lock computes
+//!           it: the tx hash, the group's first witness with its lock bytes zeroed, the group's other
+//!           witnesses, every witness past the inputs, each preceded by its length as u64 LE). The
+//!           script hash in front ties a signature to this exact lock (code, hash type, args), so it
+//!           cannot open a cell of the same key under another hash type or another deployment.
+//! context = "CKB-MLDSA-LOCK" (FIPS 204 domain separation)
 //!
-//! One signature opens every input of the group. Error codes: 1 syscall, 2 args, 3 witness,
-//! 4 public key hash, 5 signature.
+//! Every witness is read in 4 KB pieces, the first one too (its lock bytes zeroed on the way), so a
+//! large witness never has to fit in the heap. One signature opens every input of the group.
+//! Error codes: 1 syscall, 2 args, 3 witness, 4 public key hash, 5 signature.
+//! Reference the code with hash type data1, data2 or type. Under data (VM0) it never opens: the VM
+//! stops it before the script runs (measured 2026-11-14: MemWriteOnExecutablePage).
 #![no_std]
 #![no_main]
 
 mod atomics;
 
-use alloc::vec::Vec;
+use alloc::vec;
 use blake2b_ref::{Blake2b, Blake2bBuilder};
 use ckb_std::{
     ckb_constants::Source,
-    ckb_types::{packed::WitnessArgs, prelude::*},
     error::SysError,
-    high_level::{load_input_since, load_script, load_tx_hash, load_witness},
+    high_level::{load_input_since, load_script, load_script_hash, load_tx_hash},
     syscalls,
 };
 use fips204::traits::{SerDes, Verifier};
@@ -38,6 +41,7 @@ const ERR_PUBKEY_HASH: i8 = 4;
 const ERR_SIGNATURE: i8 = 5;
 
 pub const CONTEXT: &[u8] = b"CKB-MLDSA-LOCK";
+const CHUNK: usize = 4096;
 
 fn blake2b() -> Blake2b {
     Blake2bBuilder::new(32).personal(b"ckb-default-hash").build()
@@ -81,6 +85,82 @@ fn verify(level: u8, pk: &[u8], msg: &[u8], sig: &[u8]) -> bool {
     }
 }
 
+/// Total length of witness `index`, or the error (IndexOutOfBound when it does not exist).
+fn witness_len(index: usize, source: Source) -> Result<usize, SysError> {
+    let mut probe = [0u8; 0];
+    match syscalls::load_witness(&mut probe, 0, index, source) {
+        Ok(n) => Ok(n),
+        Err(SysError::LengthNotEnough(n)) => Ok(n),
+        Err(e) => Err(e),
+    }
+}
+
+/// Exactly `buf.len()` bytes of witness `index` from `offset`.
+fn read_at(buf: &mut [u8], offset: usize, index: usize, source: Source) -> Result<(), i8> {
+    match syscalls::load_witness(buf, offset, index, source) {
+        Ok(n) if n == buf.len() => Ok(()),
+        Err(SysError::LengthNotEnough(n)) if n >= buf.len() => Ok(()),
+        _ => Err(ERR_WITNESS),
+    }
+}
+
+fn u32_at(index: usize, offset: usize) -> Result<usize, i8> {
+    let mut b = [0u8; 4];
+    read_at(&mut b, offset, index, Source::GroupInput)?;
+    Ok(u32::from_le_bytes(b) as usize)
+}
+
+/// The group's first witness as a WitnessArgs, checked as strictly as molecule does, without loading
+/// it whole: total size, three field offsets (the first at 16, in order, within the total), a present
+/// lock (a u32 length then exactly that many bytes), and input_type/output_type empty or a u32 length
+/// then exactly that many bytes. Returns (total length, start and end of the lock bytes).
+fn first_witness_layout() -> Result<(usize, usize, usize), i8> {
+    let total = witness_len(0, Source::GroupInput).map_err(|_| ERR_WITNESS)?;
+    if total < 16 {
+        return Err(ERR_WITNESS);
+    }
+    let (size, o_lock, o_in, o_out) = (u32_at(0, 0)?, u32_at(0, 4)?, u32_at(0, 8)?, u32_at(0, 12)?);
+    if size != total || o_lock != 16 || o_lock > o_in || o_in > o_out || o_out > total {
+        return Err(ERR_WITNESS);
+    }
+    // lock: must be present
+    if o_in - o_lock < 4 || u32_at(0, o_lock)? != o_in - o_lock - 4 {
+        return Err(ERR_WITNESS);
+    }
+    // input_type and output_type: absent, or a well-formed Bytes
+    for (start, end) in [(o_in, o_out), (o_out, total)] {
+        if end > start && (end - start < 4 || u32_at(0, start)? != end - start - 4) {
+            return Err(ERR_WITNESS);
+        }
+    }
+    Ok((total, o_lock + 4, o_in))
+}
+
+/// `len (u64 LE) || witness` for witness `index`, read in pieces; bytes in [zero_from, zero_to) hashed
+/// as zeros. IndexOutOfBound when the witness does not exist.
+fn hash_witness(h: &mut Blake2b, index: usize, source: Source, zero_from: usize, zero_to: usize) -> Result<(), SysError> {
+    let total = witness_len(index, source)?;
+    h.update(&(total as u64).to_le_bytes());
+    let mut buf = [0u8; CHUNK];
+    let mut off = 0;
+    while off < total {
+        let n = core::cmp::min(CHUNK, total - off);
+        match syscalls::load_witness(&mut buf, off, index, source) {
+            Ok(_) | Err(SysError::LengthNotEnough(_)) => {}
+            Err(e) => return Err(e),
+        }
+        for (k, b) in buf[..n].iter_mut().enumerate() {
+            let p = off + k;
+            if p >= zero_from && p < zero_to {
+                *b = 0;
+            }
+        }
+        h.update(&buf[..n]);
+        off += n;
+    }
+    Ok(())
+}
+
 fn run() -> Result<(), i8> {
     let script = load_script().map_err(|_| ERR_SYSCALL)?;
     let args = script.args().raw_data();
@@ -90,12 +170,12 @@ fn run() -> Result<(), i8> {
     let level = args[0];
     let (pk_len, sig_len) = sizes(level)?;
 
-    let first: Vec<u8> = load_witness(0, Source::GroupInput).map_err(|_| ERR_WITNESS)?;
-    let wa = WitnessArgs::from_slice(&first).map_err(|_| ERR_WITNESS)?;
-    let lock = wa.lock().to_opt().ok_or(ERR_WITNESS)?.raw_data();
-    if lock.len() != pk_len + sig_len {
+    let (_, lock_from, lock_to) = first_witness_layout()?;
+    if lock_to - lock_from != pk_len + sig_len {
         return Err(ERR_WITNESS);
     }
+    let mut lock = vec![0u8; pk_len + sig_len];
+    read_at(&mut lock, lock_from, 0, Source::GroupInput)?;
     let (pk, sig) = lock.split_at(pk_len);
 
     let mut pkh = [0u8; 32];
@@ -106,70 +186,22 @@ fn run() -> Result<(), i8> {
         return Err(ERR_PUBKEY_HASH);
     }
 
-    let msg = sighash_all(&first, lock.len())?;
+    let msg = message(lock_from, lock_to)?;
     if !verify(level, pk, &msg, sig) {
         return Err(ERR_SIGNATURE);
     }
     Ok(())
 }
 
-/// The group's first witness with the bytes of its `lock` field set to zero (same length), as the
-/// signer saw it. WitnessArgs is a molecule table: total size, then one u32 offset per field; `lock`
-/// is a BytesOpt whose content is a u32 length then the bytes.
-fn zero_lock(witness: &[u8], lock_len: usize) -> Result<Vec<u8>, i8> {
-    let rd = |o: usize| -> Result<usize, i8> {
-        let b = witness.get(o..o + 4).ok_or(ERR_WITNESS)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
-    };
-    let lock_start = rd(4)?;
-    let lock_end = rd(8)?;
-    // A present lock field: 4 length bytes then exactly lock_len bytes.
-    if lock_end != lock_start + 4 + lock_len || rd(lock_start)? != lock_len {
-        return Err(ERR_WITNESS);
-    }
-    let mut z = witness.to_vec();
-    for b in &mut z[lock_start + 4..lock_end] {
-        *b = 0;
-    }
-    Ok(z)
-}
-
-const CHUNK: usize = 4096;
-
-/// Hashes `len (u64 LE) || witness` for a witness read in 4 KB pieces, so a large witness never has
-/// to sit in the heap whole. IndexOutOfBound when the witness does not exist.
-fn hash_witness(h: &mut Blake2b, index: usize, source: Source) -> Result<(), SysError> {
-    let mut buf = [0u8; CHUNK];
-    let total = match syscalls::load_witness(&mut buf, 0, index, source) {
-        Ok(n) => n,
-        Err(SysError::LengthNotEnough(n)) => n,
-        Err(e) => return Err(e),
-    };
-    h.update(&(total as u64).to_le_bytes());
-    let mut off = 0;
-    while off < total {
-        let n = core::cmp::min(CHUNK, total - off);
-        match syscalls::load_witness(&mut buf, off, index, source) {
-            Ok(_) | Err(SysError::LengthNotEnough(_)) => {}
-            Err(e) => return Err(e),
-        }
-        h.update(&buf[..n]);
-        off += n;
-    }
-    Ok(())
-}
-
-fn sighash_all(first: &[u8], lock_len: usize) -> Result<[u8; 32], i8> {
-    let tx_hash = load_tx_hash().map_err(|_| ERR_SYSCALL)?;
-    let zeroed = zero_lock(first, lock_len)?;
+fn message(lock_from: usize, lock_to: usize) -> Result<[u8; 32], i8> {
     let mut h = blake2b();
-    h.update(&tx_hash);
-    h.update(&(zeroed.len() as u64).to_le_bytes());
-    h.update(&zeroed);
+    h.update(&load_script_hash().map_err(|_| ERR_SYSCALL)?);
+    h.update(&load_tx_hash().map_err(|_| ERR_SYSCALL)?);
+    hash_witness(&mut h, 0, Source::GroupInput, lock_from, lock_to).map_err(|_| ERR_WITNESS)?;
     // The group's other witnesses.
     let mut i = 1;
     loop {
-        match hash_witness(&mut h, i, Source::GroupInput) {
+        match hash_witness(&mut h, i, Source::GroupInput, 0, 0) {
             Ok(()) => i += 1,
             Err(SysError::IndexOutOfBound) => break,
             Err(_) => return Err(ERR_SYSCALL),
@@ -182,7 +214,7 @@ fn sighash_all(first: &[u8], lock_len: usize) -> Result<[u8; 32], i8> {
     }
     let mut i = inputs;
     loop {
-        match hash_witness(&mut h, i, Source::Input) {
+        match hash_witness(&mut h, i, Source::Input, 0, 0) {
             Ok(()) => i += 1,
             Err(SysError::IndexOutOfBound) => break,
             Err(_) => return Err(ERR_SYSCALL),

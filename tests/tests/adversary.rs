@@ -32,9 +32,10 @@ fn blake(parts: &[&[u8]]) -> [u8; 32] {
     o
 }
 
-/// sighash_all for the group made of input 0 alone (no witnesses past the inputs here).
-fn sighash(tx: &TransactionView, lock_len: usize) -> [u8; 32] {
+/// The lock's message for the group made of input 0 alone: script hash, then sighash_all.
+fn sighash(tx: &TransactionView, script_hash: &[u8], lock_len: usize) -> [u8; 32] {
     let mut h = new_blake2b();
+    h.update(script_hash);
     h.update(tx.hash().as_slice());
     let w0 = WitnessArgs::new_unchecked(tx.witnesses().get(0).unwrap().raw_data());
     let zeroed = w0.as_builder().lock(Some(Bytes::from(vec![0u8; lock_len])).pack()).build();
@@ -78,7 +79,7 @@ fn payment() -> Seed {
         .witness(WitnessArgs::new_builder().lock(Some(Bytes::from(vec![0u8; lock_len])).pack()).build().as_bytes().pack())
         .witness(Bytes::new().pack())
         .build();
-    let msg = sighash(&tx, lock_len);
+    let msg = sighash(&tx, alice.calc_script_hash().as_slice(), lock_len);
     let sig = sk.try_sign(&msg, CONTEXT).unwrap();
     let w0 = WitnessArgs::new_builder().lock(Some(Bytes::from([&pk[..], &sig[..]].concat())).pack()).build();
     let tx = tx.as_advanced_builder().set_witnesses(vec![w0.as_bytes().pack(), Bytes::new().pack()]).build();

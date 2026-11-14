@@ -32,11 +32,17 @@ const codeHash = ccc.hashCkb(data)
 const dep = { outPoint: { txHash: codeTx, index: 0 }, depType: 'code' }
 log(`deployed mldsa-lock (${(data.length - 2) / 2} bytes) in ${codeTx.slice(0, 12)}`)
 
-// CKB sighash_all for the group made of input 0 alone, witnesses past the inputs included.
-function sighash(tx, lockLen) {
-  const w0 = ccc.WitnessArgs.fromBytes(tx.witnesses[0])
+// The lock's message: blake2b(script hash, tx hash, the group's first witness with its lock bytes
+// zeroed, the group's other witnesses, every witness past the inputs; each witness length-prefixed).
+// `group` lists the input indices under this lock, the first one carrying the signature.
+function sighash(tx, lockLen, script, group = [0]) {
+  const w0 = ccc.WitnessArgs.fromBytes(tx.witnesses[group[0]])
   const zeroed = ccc.WitnessArgs.from({ lock: ccc.hexFrom(new Uint8Array(lockLen)), inputType: w0.inputType, outputType: w0.outputType }).toBytes()
-  const parts = [ccc.bytesFrom(tx.hash()), u64(zeroed.length), zeroed]
+  const parts = [ccc.bytesFrom(ccc.Script.from(script).hash()), ccc.bytesFrom(tx.hash()), u64(zeroed.length), zeroed]
+  for (const i of group.slice(1)) {
+    const w = ccc.bytesFrom(tx.witnesses[i] ?? '0x')
+    if (tx.witnesses[i] !== undefined) parts.push(u64(w.length), w)
+  }
   for (let i = tx.inputs.length; i < tx.witnesses.length; i++) {
     const w = ccc.bytesFrom(tx.witnesses[i])
     parts.push(u64(w.length), w)
@@ -77,7 +83,7 @@ for (const [level, name, dsa] of LEVELS) {
       outputsData: ['0x'],
     })
     tx.witnesses = [ccc.hexFrom(ccc.WitnessArgs.from({ lock: ccc.hexFrom(new Uint8Array(lockLen)) }).toBytes())]
-    const sig = dsa.sign(sighash(tx, lockLen), secretKey, ctxBytes === null ? {} : { context: ctxBytes })
+    const sig = dsa.sign(sighash(tx, lockLen, lock), secretKey, ctxBytes === null ? {} : { context: ctxBytes })
     tx.witnesses = [ccc.hexFrom(ccc.WitnessArgs.from({ lock: ccc.hexFrom(ccc.bytesConcat(publicKey, sig)) }).toBytes())]
     return tx
   }
