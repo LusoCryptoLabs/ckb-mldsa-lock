@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["contracts/mldsa-lock"]
+members = ["contracts/mldsa-lock", "contracts/mldsa-kat"]
 
 [profile.release]
 overflow-checks = true

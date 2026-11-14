@@ -1,0 +1,10 @@
+[package]
+name = "mldsa-kat"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Test only: the lock's ML-DSA verification on CKB-VM, fed (level, context, pk, sig, msg) by the witness, for NIST vectors and cross checks"
+
+[dependencies]
+ckb-std = "1.1"
+fips204 = { version = "0.5", default-features = false, features = ["ml-dsa-44", "ml-dsa-65", "ml-dsa-87"] }

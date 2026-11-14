@@ -40,6 +40,19 @@ Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the buil
   witness over 128 KiB ran out of heap) is fixed by streaming; its hardening (the script hash in the
   message) is in; its missing rows are in.
 
+## Simulations (2026-11-14, `tests/src/bin/sim.rs`)
+
+| run | result |
+| --- | --- |
+| NIST ACVP ML-DSA sigVer, external pure (`tests/vectors`), on the CKB-VM build of the verifier | 45 of 45 agree with NIST (9 valid, 36 invalid) |
+| 3,600 signatures from the wallet's library (`tests/gen-cross.mjs`) and changed copies | 3,600 of 3,600 agree with it (603 valid) |
+| 3,000 random signed transactions (1 to 4 inputs of the lock among others, data1 and data2, witnesses up to 64 KiB, witnesses past the inputs, since values, output data) | all pass, at most 10.5M cycles |
+| the same 3,000, each with one change the signature covers (a witness bit, an output, its data, one more output, a since, one more witness, a header dep) | all refused |
+| 10,000 random signatures and witnesses | none accepted, every refusal 3 or 5 |
+| control: the lock with its signature check turned off | 298 of 300 changed transactions accepted, so the run sees a broken lock |
+
+`contracts/mldsa-kat` is a test-only build of the same verification, fed by the witness; it is never deployed.
+
 ## Wallet rules
 
 1. Sign with this key and context only a message the wallet computed itself from the transaction it
