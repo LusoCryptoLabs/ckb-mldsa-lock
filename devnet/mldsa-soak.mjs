@@ -9,6 +9,7 @@
 // The run keeps every account's expected balance; at the end it must equal what the node reports.
 //   MLDSA_BIN=<folder> SOAK_MINUTES=30 node mldsa-soak.mjs
 import { readFileSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto' // Web Crypto stops at 65,536 bytes a call
 import { ccc, devClient, deployerKey, committed, rpc } from 'file:///D:/DevData/scale/dev.mjs'
 import { ml_dsa44, ml_dsa65, ml_dsa87 } from 'file:///D:/Repos/LCL.cells/sdk/node_modules/@noble/post-quantum/ml-dsa.js'
 
@@ -102,6 +103,12 @@ function signMldsa(tx, a, group, inputType) {
 const feeFor = (tx) => BigInt(Math.max(100_000, (tx.toBytes().length + 200) * 2))
 
 const stats = { sent: 0, committed: 0, attackRefused: 0, attackAccepted: 0, rbfWon: 0, rbfOther: 0, problems: [] }
+// Every problem is printed when it happens, not only at the end.
+const push0 = stats.problems.push.bind(stats.problems)
+stats.problems.push = (...p) => {
+  for (const x of p) log('PROBLEM', x)
+  return push0(...p)
+}
 const actions = {}
 const pending = [] // { hash, effects: [[account, delta]], what }
 
@@ -137,7 +144,8 @@ async function pay(a, b, nIn, inputType) {
   const cells = await cellsOf(a, nIn)
   if (cells.length === 0) return false
   const total = cells.reduce((s, c) => s + c.cellOutput.capacity, 0n)
-  const amount = (BigInt(100 + int(800)) * CKB < total - 200n * CKB) ? BigInt(100 + int(800)) * CKB : total - 200n * CKB
+  const want = BigInt(100 + int(800)) * CKB // drawn once (the first runs drew it twice and paid more than the cells held)
+  const amount = want < total - 200n * CKB ? want : total - 200n * CKB
   if (amount < 100n * CKB) return false
   const tx = ccc.Transaction.from({ cellDeps: [dep], inputs: cells.map((c) => ({ previousOutput: c.outPoint })), outputs: [{ capacity: amount, lock: b.lock }, { capacity: 0n, lock: a.lock }], outputsData: ['0x', '0x'] })
   const group = cells.map((_, i) => i)
@@ -170,6 +178,7 @@ async function rbf(a, b) {
   const cells = await cellsOf(a, 1)
   if (cells.length === 0) return false
   const c = cells[0]
+  if (c.cellOutput.capacity < 300n * CKB) return false // too small to pay 100 CKB and keep a change cell
   const build = (fee) => {
     const tx = ccc.Transaction.from({ cellDeps: [dep], inputs: [{ previousOutput: c.outPoint }], outputs: [{ capacity: 100n * CKB, lock: b.lock }, { capacity: c.cellOutput.capacity - 100n * CKB - fee, lock: a.lock }], outputsData: ['0x', '0x'] })
     signMldsa(tx, a, [0], undefined)
@@ -226,7 +235,7 @@ while (Date.now() < end) {
   try {
     if (what === 'pay') await pay(a, b, 1 + int(3))
     else if (what === 'mixed') await mixed(a, b)
-    else if (what === 'big') await pay(a, b, 1, ccc.hexFrom(crypto.getRandomValues(new Uint8Array(1 + int(100_000)))))
+    else if (what === 'big') await pay(a, b, 1, ccc.hexFrom(randomBytes(1 + int(100_000))))
     else if (what === 'burst') for (const x of accounts) await pay(x, accounts[(accounts.indexOf(x) + 1 + int(5)) % accounts.length], 1)
     else await rbf(a, b)
   } catch (e) {
