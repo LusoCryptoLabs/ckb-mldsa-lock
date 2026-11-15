@@ -112,18 +112,31 @@ The toolchain is pinned in `rust-toolchain.toml` (rustc 1.99.1); with it the bui
 with data hash `0x92c18e85fc1d8cb0510f99ec7d7071bdcd5ac62d0fa3b627380e406d3343dc11`, the pinned
 copy on testnet.
 Contracts build for `riscv64imac-unknown-none-elf` with the flags in `.cargo/config.toml`. The
-build needs a RISC-V C compiler for ckb-std's shim; the published bytes were built on Ubuntu 24.04
-with `gcc-riscv64-unknown-elf`.
+build needs clang and a RISC-V gcc for ckb-std's shim; the published bytes were built on Ubuntu
+24.04 with its clang (18.1.3) and `gcc-riscv64-unknown-elf` (13.2.0).
 
 ```sh
-sudo apt-get install -y gcc-riscv64-unknown-elf
+sudo apt-get install -y clang gcc-riscv64-unknown-elf
 cargo build --release --locked --target riscv64imac-unknown-none-elf
-sha256sum target/riscv64imac-unknown-none-elf/release/mldsa-lock   # 5a7bec78... is the testnet copy
 cd tests
 cargo run --release --locked --bin mldsa-lock-tests                # the rows; ends "ALL AS EXPECTED"
 cargo run --release --locked --bin sim -- kat vectors/kat-external-pure.json
 cargo run --release --locked --bin sim -- txs 3000
 cargo run --release --locked --bin sim -- junk 10000
+```
+
+The exact bytes depend on where cargo keeps its sources, because paths end up inside the binary.
+The published copy was built as root on Ubuntu 24.04. Anywhere else the build is the same code and
+a few bytes longer. The CI job `reproduce` rebuilds the published bytes on every change; the same
+by hand:
+
+```sh
+docker run --rm -v "$PWD":/src -w /src -e HOME=/root ubuntu:24.04 bash -c '
+  apt-get update -qq && apt-get install -y -qq curl ca-certificates git build-essential clang gcc-riscv64-unknown-elf &&
+  curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal &&
+  . /root/.cargo/env && rustup toolchain install &&
+  cargo build --release --locked --target riscv64imac-unknown-none-elf &&
+  sha256sum target/riscv64imac-unknown-none-elf/release/mldsa-lock'
 ```
 
 The cross-check corpus comes from Node: `npm install`, then `node tests/gen-cross.mjs cross.jsonl`
