@@ -58,11 +58,13 @@ Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the buil
 | 10,000 random signatures and witnesses | none accepted, every refusal 3 or 5 |
 | control: the lock with its signature check turned off | 298 of 300 changed transactions accepted, so the run sees a broken lock |
 
-Devnet soak (`devnet/mldsa-soak.mjs`, 45 minutes, six accounts, signed in JavaScript): 155 actions
-(payments, mixed secp and ML-DSA transactions, large witnesses, bursts, RBF), 171 transactions
-committed, 163 attacker copies refused by the script, none accepted, 8 RBF replacements won, and every
-account's balance on the node equal to the books. A second run of only large witnesses (up to 100 KB):
-10 of 10 committed, 10 copies refused.
+Devnet soak (`devnet/mldsa-soak.mjs`, 45 minutes, six accounts, signed in JavaScript), run of
+2026-11-15, record in `devnet/soak-45min.json`: 160 actions (payments, mixed secp and ML-DSA
+transactions, large witnesses, bursts, RBF), 172 transactions sent, 160 committed, 12 replaced by
+RBF, 148 attacker copies refused by the script, none accepted, and every account's balance on the node
+equal to the books. A run of 2026-11-14 gave 171 committed and 163 copies refused; its record was not
+kept. A run of only large witnesses (up to 100 KB, `devnet/soak-4min-big.json`): 10 of 10 committed,
+10 copies refused.
 
 Testnet (2026-11-14): the pinned copy (data2) and an upgradable copy (type id, its code cell under an
 ML-DSA-87 key), a spend at each level, an upgrade refused with another key and accepted with the key,

@@ -1,0 +1,19 @@
+{
+  "when": "2026-11-15T03:34:48.571Z",
+  "minutes": 45,
+  "actions": {
+    "big": 14,
+    "burst": 32,
+    "mixed": 24,
+    "pay": 59,
+    "rbf": 31
+  },
+  "sent": 172,
+  "committed": 160,
+  "attackRefused": 148,
+  "attackAccepted": 0,
+  "rbfWon": 12,
+  "rbfOther": 0,
+  "problems": [],
+  "books": true
+}
