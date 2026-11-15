@@ -19,7 +19,7 @@ jobs:
       - name: Toolchain from rust-toolchain.toml
         run: rustup show
       - name: The C compiler ckb-std's shim is built with
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-riscv64-unknown-elf
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq clang
       - name: Cache cargo
         uses: actions/cache@v6
         with:
@@ -50,7 +50,7 @@ jobs:
 
   reproduce:
     # The same build in the environment the published bytes came from: Ubuntu 24.04, as root, with
-    # the distribution's RISC-V gcc. It must give the copy pinned on testnet, byte for byte.
+    # the distribution's clang. It must give the copy pinned on testnet, byte for byte.
     runs-on: ubuntu-24.04
     container: ubuntu:24.04
     env:
@@ -59,7 +59,7 @@ jobs:
       RUSTUP_HOME: /root/.rustup
     steps:
       - name: Tools
-        run: apt-get update -qq && apt-get install -y -qq curl ca-certificates git build-essential gcc-riscv64-unknown-elf
+        run: apt-get update -qq && apt-get install -y -qq curl ca-certificates git build-essential clang
       - uses: actions/checkout@v7
       - name: Toolchain from rust-toolchain.toml
         run: |
