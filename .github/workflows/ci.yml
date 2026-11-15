@@ -1,0 +1,49 @@
+name: test
+
+# The clean-machine run: nothing preinstalled but what rust-toolchain.toml asks for. If this passes,
+# the build and the checks below work for whoever clones the repository.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain from rust-toolchain.toml
+        run: rustup show
+      - name: The C compiler ckb-std's shim is built with
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-riscv64-unknown-elf
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            tests/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'tests/Cargo.lock') }}
+      - name: Build the lock and the test-only verifier
+        run: cargo build --release --locked --target riscv64imac-unknown-none-elf
+      - name: The build against the copy pinned on testnet
+        run: |
+          got=$(sha256sum target/riscv64imac-unknown-none-elf/release/mldsa-lock | cut -d' ' -f1)
+          want=5a7bec78c294f163af124e36cac056b0e00b2fd2700166f1ef47df1d1aa408d1
+          echo "sha256 $got, $(stat -c %s target/riscv64imac-unknown-none-elf/release/mldsa-lock) bytes"
+          if [ "$got" = "$want" ]; then echo "same bytes as the testnet copy"; else echo "::warning::this machine's build differs from the testnet copy ($want)"; fi
+      - name: The lock's rows
+        working-directory: tests
+        run: cargo run --release --locked --bin mldsa-lock-tests | tee /tmp/rows.log && grep -q "ALL AS EXPECTED" /tmp/rows.log
+      - name: NIST vectors and random transactions
+        working-directory: tests
+        run: |
+          cargo run --release --locked --bin sim -- kat vectors/kat-external-pure.json | tee /tmp/kat.log
+          grep -q "45 agree with NIST, 0 disagree" /tmp/kat.log
+          cargo run --release --locked --bin sim -- txs 300 | tee /tmp/txs.log
+          grep -q "300 passed" /tmp/txs.log && grep -q "300 refused" /tmp/txs.log

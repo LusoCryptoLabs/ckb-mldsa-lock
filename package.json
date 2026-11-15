@@ -1,0 +1,9 @@
+{
+  "name": "ckb-mldsa-lock-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Node scripts beside the lock: the cross-check corpus and the signing times.",
+  "dependencies": {
+    "@noble/post-quantum": "0.7.1"
+  }
+}

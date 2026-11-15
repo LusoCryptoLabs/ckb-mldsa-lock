@@ -1,0 +1,16 @@
+[workspace]
+
+[package]
+name = "mldsa-lock-engine"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The ckb-adversary mutation engine on mldsa-lock. The engine is not public; this crate needs a checkout of it beside this repository."
+
+[dev-dependencies]
+ckb-adversary = { path = "../../ckb-adversary" }
+ckb-testtool = "1.1.1"
+fips204 = "0.5"
+
+[profile.release]
+opt-level = 3

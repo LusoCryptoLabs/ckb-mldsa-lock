@@ -4,7 +4,7 @@
 // with noble's own verdict. The lock's verifier must give the same verdict on every line.
 //   node gen-cross.mjs <out.jsonl> [N per level]
 import { writeFileSync } from 'node:fs'
-import { ml_dsa44, ml_dsa65, ml_dsa87 } from 'file:///D:/Repos/LCL.cells/sdk/node_modules/@noble/post-quantum/ml-dsa.js'
+import { ml_dsa44, ml_dsa65, ml_dsa87 } from '@noble/post-quantum/ml-dsa.js'
 
 const out = process.argv[2]
 const N = Number(process.argv[3] ?? 200)

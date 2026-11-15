@@ -23,7 +23,7 @@ const CKB: u64 = 100_000_000;
 const CONTEXT: &[u8] = b"CKB-MLDSA-LOCK";
 
 fn dir() -> String {
-    std::env::var("MLDSA_BIN").unwrap_or_else(|_| "/root/mldsa/target/riscv64imac-unknown-none-elf/release".into())
+    std::env::var("MLDSA_BIN").unwrap_or_else(|_| "../target/riscv64imac-unknown-none-elf/release".into())
 }
 fn unhex(s: &str) -> Vec<u8> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()

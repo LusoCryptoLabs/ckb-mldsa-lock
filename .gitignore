@@ -1,4 +1,8 @@
 target/
 build/
+node_modules/
+package-lock.json
 bench/target/
 bench/tests/target/
+engine/target/
+engine/Cargo.lock

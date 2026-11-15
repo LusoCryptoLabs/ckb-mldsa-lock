@@ -19,7 +19,7 @@ const CKB: u64 = 100_000_000;
 const CONTEXT: &[u8] = b"CKB-MLDSA-LOCK";
 
 fn bin() -> Bytes {
-    let dir = std::env::var("MLDSA_BIN").unwrap_or_else(|_| "/root/mldsa/target/riscv64imac-unknown-none-elf/release".into());
+    let dir = std::env::var("MLDSA_BIN").unwrap_or_else(|_| "../target/riscv64imac-unknown-none-elf/release".into());
     std::fs::read(format!("{dir}/mldsa-lock")).expect("binary").into()
 }
 fn blake(parts: &[&[u8]]) -> [u8; 32] {
