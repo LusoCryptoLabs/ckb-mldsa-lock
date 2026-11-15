@@ -47,3 +47,28 @@ jobs:
           grep -q "45 agree with NIST, 0 disagree" /tmp/kat.log
           cargo run --release --locked --bin sim -- txs 300 | tee /tmp/txs.log
           grep -q "300 passed" /tmp/txs.log && grep -q "300 refused" /tmp/txs.log
+
+  reproduce:
+    # The same build in the environment the published bytes came from: Ubuntu 24.04, as root, with
+    # the distribution's RISC-V gcc. It must give the copy pinned on testnet, byte for byte.
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    env:
+      CARGO_HOME: /root/.cargo
+      RUSTUP_HOME: /root/.rustup
+    steps:
+      - name: Tools
+        run: apt-get update -qq && apt-get install -y -qq curl ca-certificates git build-essential gcc-riscv64-unknown-elf
+      - uses: actions/checkout@v7
+      - name: Toolchain from rust-toolchain.toml
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+          . /root/.cargo/env
+          rustup toolchain install
+      - name: Build and compare with the testnet copy
+        run: |
+          . /root/.cargo/env
+          cargo build --release --locked --target riscv64imac-unknown-none-elf
+          got=$(sha256sum target/riscv64imac-unknown-none-elf/release/mldsa-lock | cut -d' ' -f1)
+          echo "sha256 $got, $(stat -c %s target/riscv64imac-unknown-none-elf/release/mldsa-lock) bytes"
+          test "$got" = 5a7bec78c294f163af124e36cac056b0e00b2fd2700166f1ef47df1d1aa408d1
