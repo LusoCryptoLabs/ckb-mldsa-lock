@@ -1,0 +1,13 @@
+[package]
+name = "pqv"
+version = "0.1.0"
+edition = "2021"
+description = "Bench locks: one binary per post-quantum signature, same envelope (args = blake2b(pk), witness lock = pk || sig, message = sighash_all)"
+
+[dependencies]
+ckb-std = "1.1"
+blake2b-ref = "0.3"
+fips204 = { version = "0.5", default-features = false, features = ["ml-dsa-44", "ml-dsa-65"] }
+fips205 = { version = "0.5", default-features = false, features = ["slh-dsa-sha2-128s"] }
+fn-dsa-vrfy = "0.4"
+hbs-lms = { version = "0.1.1", default-features = false }

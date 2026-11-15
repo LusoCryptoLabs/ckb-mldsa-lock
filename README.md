@@ -1,6 +1,6 @@
 # ckb-mldsa-lock
 
-Prototype. Devnet only. Not for value.
+Prototype. Testnet only. Not for value.
 
 A CKB lock that opens with an ML-DSA (FIPS 204) signature over the transaction. Three levels behind
 one code hash, chosen by the address.
@@ -25,15 +25,15 @@ Error codes: 1 syscall, 2 args, 3 witness, 4 public key hash, 5 signature.
 | ML-DSA-65 | 5,281 bytes | 5,112,986 |
 | ML-DSA-87 | 7,239 bytes | 7,808,335 |
 
-Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the build PC: 2.2, 3.5 and
-4.1 ms.
+Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the build PC, median of 200
+(`bench/sign-times.mjs`, 2026-11-15): 1.9, 3.4 and 3.9 ms.
 
 ## Checks
 
 - `tests/src/main.rs`: ckb-testtool rows, each attack refused with the code of its reason. Three
   controls (a build without the group's other witnesses, without the witnesses past the inputs,
   without the script hash) each accept the row about that part.
-- Review of 2026-11-15 (no finding): its missing rows are in (`R2`): the attacks at levels 44 and
+- A second internal review (2026-11-15, no finding): its missing rows are in (`R2`): the attacks at levels 44 and
   87, the lock referenced by type, a group with fewer witnesses than cells, each guard of the first
   witness's layout, and eight level 87 addresses in one transaction (62.5M cycles). Controls: without
   the public key hash check another key's signature passes; without the layout check a wrong size
@@ -43,7 +43,7 @@ Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the buil
   with the signature check off the same run reports 188 findings.
 - `devnet/mldsa-dev.mjs`: on a dev chain, a key and signature from the wallet's JavaScript library
   at each level, verified by this lock; a signature without the context is refused.
-- One independent review: no way found to spend, reshape or replay. Its availability limit (a first
+- An internal adversarial review (2026-11-14): no way found to spend, reshape or replay. Its availability limit (a first
   witness over 128 KiB ran out of heap) is fixed by streaming; its hardening (the script hash in the
   message) is in; its missing rows are in.
 
@@ -71,6 +71,27 @@ testnet transactions in a real browser with a virtual passkey (PRF), all committ
 
 `contracts/mldsa-kat` is a test-only build of the same verification, fed by the witness; it is never deployed.
 
+## Benchmark (`bench/`)
+
+Verification of other schemes in the same envelope (args = blake2b-256 of the public key, witness
+lock = public key || signature, a sighash_all message), in ckb-testtool 1.1.1 on VM data2. It
+measures verification only, so a full lock costs slightly more. Each lock has three controls that
+must fail for the stated reason. Measured 2026-11-15, cycles over 5 signatures:
+
+| scheme | cycles | public key + signature |
+| --- | --- | --- |
+| secp256k1 (the system script) | 1.61M to 1.65M | 65 B (signature only) |
+| FN-DSA-512 (Falcon), fn-dsa 0.4 | 0.74M to 0.75M | 1,563 B |
+| FN-DSA-1024 | 1.49M | 3,073 B |
+| ML-DSA-44, fips204 0.5 | 3.25M | 3,732 B |
+| ML-DSA-65 | 5.00M | 5,261 B |
+| LMS H10 W4, hbs-lms 0.1.1 | 2.3M to 2.8M | 2,572 B |
+| SLH-DSA-SHA2-128s, fips205 0.5 | 17.1M to 18.0M | 7,888 B |
+
+FN-DSA is not a published standard yet and its encodings may change. Build the workspace for
+`riscv64imac-unknown-none-elf`, then `cargo run --release` in `bench/tests`. `bench/sign-times.mjs`
+times signing with @noble/post-quantum.
+
 ## Wallet rules
 
 1. Sign with this key and context only a message the wallet computed itself from the transaction it
@@ -84,4 +105,7 @@ testnet transactions in a real browser with a virtual passkey (PRF), all committ
 ## Build
 
 `Cargo.lock` is committed: the reviewed build uses fips204 0.5.0, ckb-std 1.1.0, molecule 0.9.2.
+The toolchain is pinned in `rust-toolchain.toml` (rustc 1.99.1); with it the build is 97,280 bytes
+with data hash `0x92c18e85fc1d8cb0510f99ec7d7071bdcd5ac62d0fa3b627380e406d3343dc11`, the pinned
+copy on testnet.
 Contracts build for `riscv64imac-unknown-none-elf` with the flags in `.cargo/config.toml`.

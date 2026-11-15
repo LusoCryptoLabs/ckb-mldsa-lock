@@ -1,0 +1,18 @@
+[workspace]
+
+[package]
+name = "pq-bench-run"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-testtool = "1.1.1"
+ckb-system-scripts = "0.5.4"
+fips204 = "0.5"
+fips205 = { version = "0.5", default-features = false, features = ["default-rng", "slh-dsa-sha2-128s"] }
+fn-dsa = "0.4"
+hbs-lms = { version = "0.1.1", features = ["std"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[profile.release]
+opt-level = 3
