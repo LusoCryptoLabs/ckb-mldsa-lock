@@ -33,7 +33,9 @@ Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the buil
 - `tests/src/main.rs`: ckb-testtool rows, each attack refused with the code of its reason. Three
   controls (a build without the group's other witnesses, without the witnesses past the inputs,
   without the script hash) each accept the row about that part.
-- `tests/tests/adversary.rs`: the ckb-adversary engine, 289 mutants of a payment, all refused.
+- `tests/tests/adversary.rs`: the ckb-adversary engine on eight payments (each level, hash types
+  data2 and type, one and two inputs in the group), 2,726 mutants, all refused. Control: on a build
+  with the signature check off the same run reports 188 findings.
 - `devnet/mldsa-dev.mjs`: on a dev chain, a key and signature from the wallet's JavaScript library
   at each level, verified by this lock; a signature without the context is refused.
 - One independent review: no way found to spend, reshape or replay. Its availability limit (a first
