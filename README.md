@@ -38,9 +38,10 @@ Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the buil
   witness's layout, and eight level 87 addresses in one transaction (62.5M cycles). Controls: without
   the public key hash check another key's signature passes; without the layout check a wrong size
   header is refused by the signature instead (5, not 3).
-- `tests/tests/adversary.rs`: the ckb-adversary engine on eight payments (each level, hash types
+- `engine/tests/adversary.rs`: the ckb-adversary engine on eight payments (each level, hash types
   data2 and type, one and two inputs in the group), 2,726 mutants, all refused. Control: on a build
-  with the signature check off the same run reports 188 findings.
+  with the signature check off the same run reports 188 findings. The engine is not public, so
+  this crate is apart from `tests/` and needs a checkout of it beside this repository.
 - `devnet/mldsa-dev.mjs`: on a dev chain, a key and signature from the wallet's JavaScript library
   at each level, verified by this lock; a signature without the context is refused.
 - An internal adversarial review (2026-11-14): no way found to spend, reshape or replay. Its availability limit (a first
@@ -110,4 +111,34 @@ times signing with @noble/post-quantum.
 The toolchain is pinned in `rust-toolchain.toml` (rustc 1.99.1); with it the build is 97,280 bytes
 with data hash `0x92c18e85fc1d8cb0510f99ec7d7071bdcd5ac62d0fa3b627380e406d3343dc11`, the pinned
 copy on testnet.
-Contracts build for `riscv64imac-unknown-none-elf` with the flags in `.cargo/config.toml`.
+Contracts build for `riscv64imac-unknown-none-elf` with the flags in `.cargo/config.toml`. The
+build needs a RISC-V C compiler for ckb-std's shim; the published bytes were built on Ubuntu 24.04
+with `gcc-riscv64-unknown-elf`.
+
+```sh
+sudo apt-get install -y gcc-riscv64-unknown-elf
+cargo build --release --locked --target riscv64imac-unknown-none-elf
+sha256sum target/riscv64imac-unknown-none-elf/release/mldsa-lock   # 5a7bec78... is the testnet copy
+cd tests
+cargo run --release --locked --bin mldsa-lock-tests                # the rows; ends "ALL AS EXPECTED"
+cargo run --release --locked --bin sim -- kat vectors/kat-external-pure.json
+cargo run --release --locked --bin sim -- txs 3000
+cargo run --release --locked --bin sim -- junk 10000
+```
+
+The cross-check corpus comes from Node: `npm install`, then `node tests/gen-cross.mjs cross.jsonl`
+and `cargo run --release --bin sim -- cross ../cross.jsonl` in `tests`. To point the tests at
+another build of the lock, set `MLDSA_BIN` to its folder; that is how the controls run.
+
+`devnet/` holds the scripts that ran on our dev chain and on testnet, as the record of what ran.
+They import our chain helper and read key files by paths on our machine, so they do not run as they
+are elsewhere.
+
+## Reporting a problem
+
+A way to spend, replay or reshape under this lock is what we most want to hear. Use GitHub's
+private vulnerability reporting on this repository, or hello@lusocryptolabs.com.
+
+## Licence
+
+MIT.
