@@ -33,6 +33,11 @@ Binary: 97,280 bytes. Signing in Node with @noble/post-quantum 0.7.1 on the buil
 - `tests/src/main.rs`: ckb-testtool rows, each attack refused with the code of its reason. Three
   controls (a build without the group's other witnesses, without the witnesses past the inputs,
   without the script hash) each accept the row about that part.
+- Review of 2026-11-15 (no finding): its missing rows are in (`R2`): the attacks at levels 44 and
+  87, the lock referenced by type, a group with fewer witnesses than cells, each guard of the first
+  witness's layout, and eight level 87 addresses in one transaction (62.5M cycles). Controls: without
+  the public key hash check another key's signature passes; without the layout check a wrong size
+  header is refused by the signature instead (5, not 3).
 - `tests/tests/adversary.rs`: the ckb-adversary engine on eight payments (each level, hash types
   data2 and type, one and two inputs in the group), 2,726 mutants, all refused. Control: on a build
   with the signature check off the same run reports 188 findings.

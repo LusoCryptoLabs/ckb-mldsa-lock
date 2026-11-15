@@ -317,5 +317,92 @@ fn main() {
         all &= expect(&format!("R: a {kib} KiB input_type in the first witness, honest"), e.verify(&e.sign(&t, &k, &lock, CONTEXT)), "ok");
     }
 
+    // Review of 2026-11-15: the rows it found missing.
+    // The attacks at levels 44 and 87 (they ran at 65 only).
+    for level in [0x02u8, 0x05] {
+        let k = key(level);
+        let lock = e.lock(level, &k.pk);
+        let tx = e.tx(&lock, 1, true);
+        let good = e.sign(&tx, &k, &lock, CONTEXT);
+        let mut l = lock_bytes(&good);
+        l[k.pk.len() + 100] ^= 1;
+        all &= expect(&format!("R2: level 0x{level:02x}, one signature bit flipped"), e.verify(&with_lock(&good, Bytes::from(l))), "5");
+        let k2 = key(level);
+        all &= expect(&format!("R2: level 0x{level:02x}, another key's valid signature"), e.verify(&e.sign(&tx, &k2, &lock, CONTEXT)), "4");
+        all &= expect(&format!("R2: level 0x{level:02x}, a witness past the inputs changed"), e.verify(&set_witness(&good, 1, Bytes::from_static(b"changed"))), "5");
+        let out = good.as_advanced_builder().set_outputs(vec![CellOutput::new_builder().capacity(999 * CKB).lock(e.other.clone()).build()]).build();
+        all &= expect(&format!("R2: level 0x{level:02x}, an output changed after signing"), e.verify(&out), "5");
+    }
+    {
+        // Referenced by type, as the upgradable copy is.
+        let lt = e.lock_ht(0x03, &k.pk, ScriptHashType::Type);
+        let t = e.tx(&lt, 1, false);
+        all &= expect("R2: the lock referenced by type", e.verify(&e.sign(&t, &k, &lt, CONTEXT)), "ok");
+        let a = e.cell(&lock);
+        let b = e.cell(&lt);
+        let t = e.tx_of(vec![a, b], false);
+        let t = e.sign_group(&t, &k, &lock, &[0], CONTEXT);
+        let t = set_witness(&t, 1, t.witnesses().get(0).unwrap().raw_data());
+        all &= expect("R2: one signature copied onto the same key under type", e.verify(&t), "5");
+    }
+    {
+        // Fewer witnesses than the group has cells, then one put in for the second cell after signing.
+        let t = e.tx(&lock, 2, false);
+        let t = t.as_advanced_builder().set_witnesses(vec![Bytes::new().pack()]).build();
+        let s = e.sign_group(&t, &k, &lock, &[0, 1], CONTEXT);
+        all &= expect("R2: two cells in the group, one witness", e.verify(&s), "ok");
+        for (name, added) in [("a witness", Bytes::from_static(b"x")), ("an empty witness", Bytes::new())] {
+            let mut wits: Vec<Bytes> = s.witnesses().into_iter().map(|w| w.raw_data()).collect();
+            wits.push(added);
+            let s2 = s.as_advanced_builder().set_witnesses(wits.iter().map(|w| w.pack()).collect()).build();
+            all &= expect(&format!("R2: {name} added for the group's second cell after signing"), e.verify(&s2), "5");
+        }
+    }
+    {
+        // Each guard of the first witness's layout, one header field wrong at a time: refused as a
+        // witness (3), before any signature is checked.
+        let raw = good.witnesses().get(0).unwrap().raw_data().to_vec();
+        let rd = |v: &[u8], at: usize| u32::from_le_bytes([v[at], v[at + 1], v[at + 2], v[at + 3]]);
+        let (total, o_in) = (rd(&raw, 0), rd(&raw, 8));
+        for (name, at, value) in [
+            ("the size header one more than the witness", 0usize, total + 1),
+            ("the lock's offset 17, not 16", 4, 17),
+            ("input_type's offset before the lock's", 8, 12),
+            ("output_type's offset before input_type's", 12, o_in - 1),
+            ("output_type's offset past the end", 12, total + 4),
+            ("the lock's length header one less than its bytes", 16, o_in - 16 - 4 - 1),
+        ] {
+            let mut w = raw.clone();
+            w[at..at + 4].copy_from_slice(&value.to_le_bytes());
+            all &= expect(&format!("R2: layout, {name}"), e.verify(&set_witness(&good, 0, Bytes::from(w))), "3");
+        }
+        for (name, tail) in [("an input_type of two bytes", vec![1u8, 2]), ("an input_type whose length header is one too many", vec![5u8, 0, 0, 0, 9, 9, 9, 9])] {
+            let mut w = raw.clone();
+            let end = total + tail.len() as u32;
+            w.extend_from_slice(&tail);
+            w[0..4].copy_from_slice(&end.to_le_bytes());
+            w[12..16].copy_from_slice(&end.to_le_bytes());
+            all &= expect(&format!("R2: layout, {name}"), e.verify(&set_witness(&good, 0, Bytes::from(w))), "3");
+        }
+        let no_lock = WitnessArgs::new_builder().input_type(Some(Bytes::from_static(b"only an input_type")).pack()).build();
+        all &= expect("R2: layout, no lock field at all", e.verify(&set_witness(&good, 0, no_lock.as_bytes())), "3");
+    }
+    {
+        // The largest case that still relays: eight level 87 addresses in one transaction.
+        let mut ins = vec![];
+        let mut keys = vec![];
+        for _ in 0..8 {
+            let kk = key(0x05);
+            let ll = e.lock(0x05, &kk.pk);
+            ins.push(e.cell(&ll));
+            keys.push((kk, ll));
+        }
+        let mut t = e.tx_of(ins, false);
+        for (i, (kk, ll)) in keys.iter().enumerate() {
+            t = e.sign_group(&t, kk, ll, &[i], CONTEXT);
+        }
+        all &= expect("R2: eight level 87 addresses in one transaction", e.verify(&t), "ok");
+    }
+
     println!("{}", if all { "ALL AS EXPECTED" } else { "SOMETHING DID NOT BEHAVE" });
 }
