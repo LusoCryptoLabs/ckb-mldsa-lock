@@ -31,12 +31,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'tests/Cargo.lock') }}
       - name: Build the lock and the test-only verifier
         run: cargo build --release --locked --target riscv64imac-unknown-none-elf
-      - name: The build against the copy pinned on testnet
-        run: |
-          got=$(sha256sum target/riscv64imac-unknown-none-elf/release/mldsa-lock | cut -d' ' -f1)
-          want=5a7bec78c294f163af124e36cac056b0e00b2fd2700166f1ef47df1d1aa408d1
-          echo "sha256 $got, $(stat -c %s target/riscv64imac-unknown-none-elf/release/mldsa-lock) bytes"
-          if [ "$got" = "$want" ]; then echo "same bytes as the testnet copy"; else echo "::warning::this machine's build differs from the testnet copy ($want)"; fi
       - name: The lock's rows
         working-directory: tests
         run: cargo run --release --locked --bin mldsa-lock-tests | tee /tmp/rows.log && grep -q "ALL AS EXPECTED" /tmp/rows.log
